@@ -3,10 +3,10 @@
 import subprocess
 import click
 from rich.console import Console
-from rich.prompt import Prompt
+from rich.prompt import Prompt, Confirm
 
 from .github_client import GitHubClient, get_user_repos
-from .ai import estimate_issue_size, breakdown_issue
+from .ai import estimate_issue_size, breakdown_issue, draft_issue_conversation
 
 console = Console()
 
@@ -152,6 +152,72 @@ def breakdown(ctx, issue_number, create):
                 labels=[f"size: {task.size}"],
             )
             console.print(f"  Created [green]#{new_issue.number}[/green]: {task.title}")
+
+
+@main.command()
+@click.pass_context
+def new(ctx):
+    """Create new issues with AI assistance."""
+    repo = resolve_repo(ctx.obj.get("repo"))
+    client = GitHubClient(repo)
+
+    console.print("[bold]Let's create some issues![/bold]")
+    console.print("[dim]I'll ask you some questions to help draft well-structured issues.[/dim]\n")
+
+    # Start conversation
+    conversation = []
+
+    # Get initial description from user
+    initial = Prompt.ask("[cyan]What would you like to build or fix?[/cyan]")
+    conversation.append({"role": "user", "content": initial})
+
+    # Conversation loop
+    while True:
+        console.print("\n[dim]Thinking...[/dim]")
+        ready, question, drafts = draft_issue_conversation(conversation)
+
+        if ready and drafts:
+            # Show all draft issues
+            console.print(f"\n[bold green]Here are your {len(drafts)} draft issue(s):[/bold green]")
+
+            for i, draft in enumerate(drafts, 1):
+                console.print(f"\n[bold cyan]Issue {i}:[/bold cyan]")
+                console.print(f"[bold]Title:[/bold] {draft.title}")
+                console.print(f"[bold]Size:[/bold] {draft.size}")
+                console.print(f"\n[bold]Description:[/bold]\n{draft.description}")
+
+                if draft.tasks:
+                    console.print("\n[bold]Tasks:[/bold]")
+                    for task in draft.tasks:
+                        console.print(f"  - {task}")
+
+            # Confirm creation
+            console.print()
+            if Confirm.ask(f"[yellow]Create {len(drafts)} issue(s)?[/yellow]", default=True):
+                for draft in drafts:
+                    # Build issue body
+                    body = draft.description
+                    if draft.tasks:
+                        body += "\n\n## Tasks\n"
+                        for task in draft.tasks:
+                            body += f"- [ ] {task}\n"
+
+                    new_issue = client.create_issue(
+                        title=draft.title,
+                        body=body,
+                        labels=[f"size: {draft.size}"],
+                    )
+                    console.print(f"[green]Created issue #{new_issue.number}:[/green] {draft.title}")
+                    console.print(f"  [dim]https://github.com/{repo}/issues/{new_issue.number}[/dim]")
+            else:
+                console.print("[dim]Issues not created.[/dim]")
+            break
+        else:
+            # Ask the follow-up question
+            conversation.append({"role": "assistant", "content": question})
+            console.print(f"\n[cyan]{question}[/cyan]")
+            answer = Prompt.ask("")
+            conversation.append({"role": "user", "content": answer})
 
 
 if __name__ == "__main__":

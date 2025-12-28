@@ -28,6 +28,15 @@ class SubTask:
     size: str
 
 
+@dataclass
+class DraftIssue:
+    """A draft issue ready to be created."""
+    title: str
+    description: str
+    size: str
+    tasks: list[str]
+
+
 SIZE_SCHEMA = json.dumps({
     "type": "object",
     "properties": {
@@ -56,6 +65,27 @@ BREAKDOWN_SCHEMA = json.dumps({
         }
     },
     "required": ["tasks"]
+})
+
+CONVERSATION_SCHEMA = json.dumps({
+    "type": "object",
+    "properties": {
+        "ready": {"type": "boolean"},
+        "question": {"type": "string"},
+        "issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "size": {"type": "string", "enum": ["XS", "S", "M", "L", "XL"]},
+                    "tasks": {"type": "array", "items": {"type": "string"}}
+                }
+            }
+        }
+    },
+    "required": ["ready"]
 })
 
 
@@ -157,3 +187,59 @@ Return an array of tasks with title, description, and size."""
                 size="M",
             )
         ]
+
+
+def draft_issue_conversation(conversation: list[dict]) -> tuple[bool, str | None, list[DraftIssue] | None]:
+    """Continue a conversation to draft new issues.
+
+    Returns:
+        (ready, question, issues) where:
+        - ready: True if the issues are ready to create
+        - question: Next question to ask (if not ready)
+        - issues: List of draft issues (if ready)
+    """
+    history = "\n".join(
+        f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+        for m in conversation
+    )
+
+    prompt = f"""You are helping draft GitHub issues. Have a conversation to understand what the user wants to build.
+
+Ask clarifying questions to understand:
+- What problem this solves or what feature it adds
+- Key requirements or acceptance criteria
+- Any technical constraints or preferences
+
+IMPORTANT: If the user describes multiple distinct features or capabilities, create SEPARATE issues for each one.
+Each issue should be independently implementable. Never combine unrelated features into a single issue.
+
+Conversation so far:
+{history}
+
+If you need more information, set ready=false and ask ONE focused question.
+If you have enough information, set ready=true and provide the issues array (one issue per distinct feature)."""
+
+    try:
+        response = _call_claude(prompt, CONVERSATION_SCHEMA)
+        data = json.loads(response)
+
+        if "structured_output" in data:
+            data = data["structured_output"]
+
+        ready = data.get("ready", False)
+
+        if ready and "issues" in data:
+            issues = []
+            for issue_data in data["issues"]:
+                issues.append(DraftIssue(
+                    title=issue_data.get("title", "Untitled"),
+                    description=issue_data.get("description", ""),
+                    size=issue_data.get("size", "M"),
+                    tasks=issue_data.get("tasks", []),
+                ))
+            return True, None, issues if issues else None
+        else:
+            return False, data.get("question", "Can you tell me more?"), None
+
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
+        return False, "Can you describe what you want to build?", None

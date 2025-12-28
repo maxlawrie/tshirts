@@ -7,6 +7,7 @@ A CLI tool for breaking down GitHub issues into smaller pieces using AI.
 - `tshirts estimate` - Assigns t-shirt size labels (XS, S, M, L, XL) to issues without them
 - `tshirts breakdown <issue>` - Breaks an issue into smaller sub-tasks
 - `tshirts breakdown <issue> --create` - Creates sub-issues automatically
+- `tshirts new` - Interactive AI-assisted issue creation with conversational flow
 
 ## Repo Detection
 
