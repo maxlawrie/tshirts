@@ -143,7 +143,10 @@ def breakdown(ctx, issue_number, create):
         console.print(f"   {task.description[:100]}..." if len(task.description) > 100 else f"   {task.description}")
         console.print()
 
-    if create:
+    # If --create flag passed, create immediately; otherwise prompt user
+    should_create = create or Confirm.ask("\n[yellow]Create these issues?[/yellow]", default=False)
+
+    if should_create:
         console.print("[yellow]Creating sub-issues...[/yellow]")
         for task in tasks:
             new_issue = client.create_issue(
