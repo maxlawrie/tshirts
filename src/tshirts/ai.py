@@ -40,16 +40,22 @@ SIZE_SCHEMA = json.dumps({
 })
 
 BREAKDOWN_SCHEMA = json.dumps({
-    "type": "array",
-    "items": {
-        "type": "object",
-        "properties": {
-            "title": {"type": "string"},
-            "description": {"type": "string"},
-            "size": {"type": "string", "enum": ["XS", "S", "M", "L", "XL"]}
-        },
-        "required": ["title", "description", "size"]
-    }
+    "type": "object",
+    "properties": {
+        "tasks": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "description": {"type": "string"},
+                    "size": {"type": "string", "enum": ["XS", "S", "M", "L", "XL"]}
+                },
+                "required": ["title", "description", "size"]
+            }
+        }
+    },
+    "required": ["tasks"]
 })
 
 
@@ -133,15 +139,17 @@ Return an array of tasks with title, description, and size."""
         # Extract structured_output from Claude CLI response
         if "structured_output" in data:
             data = data["structured_output"]
+        # Get the tasks array from the object
+        tasks = data.get("tasks", [])
         return [
             SubTask(
                 title=task["title"],
                 description=task["description"],
                 size=task["size"].upper(),
             )
-            for task in data
+            for task in tasks
         ]
-    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError):
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
         return [
             SubTask(
                 title=f"Implement: {issue.title}",
