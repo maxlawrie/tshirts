@@ -10,11 +10,17 @@ pip install -e .
 
 ## Setup
 
-Set the required environment variables:
+### Requirements
+
+- **Claude Code CLI** - Must be installed and authenticated (`claude` command available)
+- **GitHub Token** - For accessing GitHub issues
 
 ```bash
+# Authenticate Claude Code (works with Claude Max subscription)
+claude login
+
+# Set GitHub token (or use `gh auth token` if you have gh CLI)
 export GITHUB_TOKEN="your-github-token"
-export ANTHROPIC_API_KEY="your-anthropic-api-key"
 ```
 
 ## Usage
@@ -24,7 +30,7 @@ export ANTHROPIC_API_KEY="your-anthropic-api-key"
 Assign t-shirt size labels (XS, S, M, L, XL) to all open issues that don't have one:
 
 ```bash
-tshirts --repo owner/repo estimate
+tshirts estimate
 ```
 
 ### Break down an issue
@@ -32,13 +38,30 @@ tshirts --repo owner/repo estimate
 Break a large issue into smaller, actionable tasks:
 
 ```bash
-tshirts --repo owner/repo breakdown 42
+tshirts breakdown 42
 ```
 
 To automatically create sub-issues:
 
 ```bash
-tshirts --repo owner/repo breakdown 42 --create
+tshirts breakdown 42 --create
+```
+
+### Repo selection
+
+tshirts automatically detects which repo to use:
+
+1. **From git** - If you're in a git repo with a GitHub remote, it uses that
+2. **Interactive** - Otherwise, it shows your repos and lets you pick one
+3. **Explicit** - You can always specify with `--repo owner/name`
+
+```bash
+# Explicit repo
+tshirts --repo owner/repo estimate
+
+# Or set via environment variable
+export TSHIRTS_REPO="owner/repo"
+tshirts estimate
 ```
 
 ## Size Guide

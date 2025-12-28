@@ -1,12 +1,23 @@
 """AI-powered issue estimation and breakdown."""
 
-import os
 import json
+import shutil
+import subprocess
 from dataclasses import dataclass
 
-import anthropic
-
 from .github_client import Issue
+
+
+def _find_claude() -> str:
+    """Find the claude CLI executable."""
+    claude = shutil.which("claude")
+    if claude:
+        return claude
+    # Fallback for Windows
+    claude_cmd = shutil.which("claude.cmd")
+    if claude_cmd:
+        return claude_cmd
+    raise FileNotFoundError("claude CLI not found. Install it with: npm install -g @anthropic-ai/claude-code")
 
 
 @dataclass
@@ -17,12 +28,46 @@ class SubTask:
     size: str
 
 
-def _get_client() -> anthropic.Anthropic:
-    """Get the Anthropic client."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY")
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY environment variable required")
-    return anthropic.Anthropic(api_key=api_key)
+SIZE_SCHEMA = json.dumps({
+    "type": "object",
+    "properties": {
+        "size": {
+            "type": "string",
+            "enum": ["XS", "S", "M", "L", "XL"]
+        }
+    },
+    "required": ["size"]
+})
+
+BREAKDOWN_SCHEMA = json.dumps({
+    "type": "array",
+    "items": {
+        "type": "object",
+        "properties": {
+            "title": {"type": "string"},
+            "description": {"type": "string"},
+            "size": {"type": "string", "enum": ["XS", "S", "M", "L", "XL"]}
+        },
+        "required": ["title", "description", "size"]
+    }
+})
+
+
+def _call_claude(prompt: str, schema: str | None = None) -> str:
+    """Call Claude CLI with a prompt and return the response."""
+    claude_path = _find_claude()
+    cmd = [claude_path, "-p", "--model", "sonnet"]
+    if schema:
+        cmd.extend(["--output-format", "json", "--json-schema", schema])
+
+    # Pass prompt via stdin to handle multi-line content properly
+    result = subprocess.run(
+        cmd,
+        input=prompt,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
 
 
 def estimate_issue_size(issue: Issue) -> str:
@@ -30,8 +75,6 @@ def estimate_issue_size(issue: Issue) -> str:
 
     Returns one of: XS, S, M, L, XL
     """
-    client = _get_client()
-
     prompt = f"""Analyze this GitHub issue and estimate its size using t-shirt sizing.
 
 Issue #{issue.number}: {issue.title}
@@ -46,27 +89,24 @@ Size guide:
 - L: Large task, 2-3 days (significant feature, refactoring, multiple components)
 - XL: Very large, 1+ week (major feature, architectural change, needs breakdown)
 
-Respond with ONLY the size (XS, S, M, L, or XL), nothing else."""
+Return the estimated size."""
 
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=10,
-        messages=[{"role": "user", "content": prompt}],
-    )
-
-    size = response.content[0].text.strip().upper()
-
-    # Validate response
-    if size not in ["XS", "S", "M", "L", "XL"]:
-        return "M"  # Default to medium if unclear
-
-    return size
+    try:
+        response = _call_claude(prompt, SIZE_SCHEMA)
+        data = json.loads(response)
+        # Extract structured_output from Claude CLI response
+        if "structured_output" in data:
+            return data["structured_output"].get("size", "M")
+        # Fallback: check if size is directly in data
+        if "size" in data:
+            return data["size"]
+        return "M"
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError):
+        return "M"
 
 
 def breakdown_issue(issue: Issue) -> list[SubTask]:
     """Break down an issue into smaller sub-tasks using AI."""
-    client = _get_client()
-
     prompt = f"""Break down this GitHub issue into smaller, actionable sub-tasks.
 
 Issue #{issue.number}: {issue.title}
@@ -85,29 +125,23 @@ For each sub-task, estimate its size:
 - M: half day to 1 day
 - L: 2-3 days
 
-Respond with a JSON array of objects with "title", "description", and "size" fields.
-Example: [{{"title": "Add login button", "description": "Add a login button to the header component", "size": "S"}}]
-
-Respond with ONLY the JSON array, no other text."""
-
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=2000,
-        messages=[{"role": "user", "content": prompt}],
-    )
+Return an array of tasks with title, description, and size."""
 
     try:
-        tasks_data = json.loads(response.content[0].text.strip())
+        response = _call_claude(prompt, BREAKDOWN_SCHEMA)
+        data = json.loads(response)
+        # Extract structured_output from Claude CLI response
+        if "structured_output" in data:
+            data = data["structured_output"]
         return [
             SubTask(
                 title=task["title"],
                 description=task["description"],
                 size=task["size"].upper(),
             )
-            for task in tasks_data
+            for task in data
         ]
-    except (json.JSONDecodeError, KeyError):
-        # Return a single task if parsing fails
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError):
         return [
             SubTask(
                 title=f"Implement: {issue.title}",

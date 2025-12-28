@@ -8,6 +8,22 @@ from github import Github, GithubException
 SIZE_LABELS = ["size: XS", "size: S", "size: M", "size: L", "size: XL"]
 
 
+def get_user_repos() -> list[str]:
+    """Get list of repos the authenticated user has access to."""
+    token = os.environ.get("GITHUB_TOKEN")
+    if not token:
+        raise ValueError("GITHUB_TOKEN environment variable required")
+
+    gh = Github(token)
+    user = gh.get_user()
+
+    repos = []
+    for repo in user.get_repos(sort="updated"):
+        repos.append(repo.full_name)
+
+    return repos
+
+
 @dataclass
 class Issue:
     """Represents a GitHub issue."""
