@@ -227,7 +227,7 @@ def new(ctx):
 @click.argument("issue_number", type=int, required=False)
 @click.pass_context
 def groom(ctx, issue_number):
-    """Refine issues by gathering missing information."""
+    """Refine issues by gathering missing information (alias: refine)."""
     repo = resolve_repo(ctx.obj.get("repo"))
     client = GitHubClient(repo)
 
@@ -292,6 +292,15 @@ def groom(ctx, issue_number):
             console.print(f"[cyan]{question}[/cyan]")
             answer = Prompt.ask("")
             conversation.append({"role": "user", "content": answer})
+
+
+
+@main.command()
+@click.argument("issue_number", type=int, required=False)
+@click.pass_context
+def refine(ctx, issue_number):
+    """Alias for groom - refine issues by gathering missing information."""
+    ctx.invoke(groom, issue_number=issue_number)
 
 
 if __name__ == "__main__":
