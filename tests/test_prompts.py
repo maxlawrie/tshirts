@@ -39,7 +39,7 @@ class TestEstimatePromptConstruction:
         issue = Issue(number=42, title="Test", body="Body", labels=[])
         estimate_issue_size(issue)
 
-        assert "Issue #42" in capture_prompt["prompt"]
+        assert "#42" in capture_prompt["prompt"]
 
     def test_includes_issue_title(self, capture_prompt):
         """Test that prompt includes issue title."""
@@ -73,7 +73,7 @@ class TestEstimatePromptConstruction:
         estimate_issue_size(issue)
 
         # Should not crash, prompt should still be valid
-        assert "Issue #1" in capture_prompt["prompt"]
+        assert "#1" in capture_prompt["prompt"]
 
     def test_handles_special_characters_in_title(self, capture_prompt):
         """Test prompt with special characters in title."""

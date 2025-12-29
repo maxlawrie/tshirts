@@ -111,21 +111,65 @@ def estimate_issue_size(issue: Issue) -> str:
 
     Returns one of: XS, S, M, L, XL
     """
-    prompt = f"""Analyze this GitHub issue and estimate its size using t-shirt sizing.
+    prompt = f"""You are an experienced software engineer estimating the complexity of a GitHub issue.
 
-Issue #{issue.number}: {issue.title}
+ISSUE TO ESTIMATE:
+Title: {issue.title}
+Number: #{issue.number}
 
 Description:
 {issue.body}
 
-Size guide:
-- XS: Trivial change, <30 min (typo fix, config change, small tweak)
-- S: Small task, 1-2 hours (simple bug fix, small feature, single file change)
-- M: Medium task, half day to 1 day (moderate feature, multiple files, some testing)
-- L: Large task, 2-3 days (significant feature, refactoring, multiple components)
-- XL: Very large, 1+ week (major feature, architectural change, needs breakdown)
+ESTIMATION CRITERIA:
 
-Return the estimated size."""
+Consider these factors when estimating:
+1. SCOPE: How many files/components need changes?
+2. COMPLEXITY: Is this straightforward or does it require deep thinking?
+3. RISK: Could this break existing functionality? Need careful testing?
+4. DEPENDENCIES: Are there external dependencies or coordination needed?
+5. UNKNOWNS: Is the solution clear or does it need investigation?
+
+SIZE DEFINITIONS:
+
+XS (Extra Small) - Under 30 minutes
+- Single-line or few-line changes
+- Typo fixes, copy changes, config tweaks
+- No logic changes, no testing needed
+- Examples: Fix spelling in README, update a constant, add a comment
+
+S (Small) - 1-2 hours
+- Contained to 1-2 files
+- Clear solution, minimal complexity
+- Simple bug fix with obvious cause
+- Examples: Fix null check, add validation, simple UI tweak
+
+M (Medium) - Half day to 1 day
+- Changes across 3-5 files
+- Some complexity, may need design decisions
+- Requires testing but scope is clear
+- Examples: Add new API endpoint, implement a form, refactor a function
+
+L (Large) - 2-3 days
+- Significant feature or refactoring
+- Multiple components affected
+- Requires careful planning and testing
+- May need code review discussions
+- Examples: New feature with UI+API+DB, significant refactor, complex bug
+
+XL (Extra Large) - 1+ week
+- Major feature or architectural change
+- High complexity or many unknowns
+- Should probably be broken into smaller issues
+- Cross-team coordination may be needed
+- Examples: New authentication system, major migration, new module
+
+ESTIMATION GUIDELINES:
+- When uncertain, size UP (it is better to overestimate)
+- Vague or unclear issues should be sized larger (unknowns add time)
+- Consider testing time, not just coding time
+- If description is minimal, assume medium complexity
+
+Based on the above criteria, estimate this issue's size."""
 
     try:
         response = _call_claude(prompt, SIZE_SCHEMA)
