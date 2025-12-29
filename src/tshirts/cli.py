@@ -6,10 +6,9 @@ from rich.console import Console
 from rich.prompt import Prompt, Confirm
 
 from .github_client import GitHubClient, get_user_repos
-from .ai import estimate_issue_size, breakdown_issue, draft_issue_conversation, groom_issue_conversation
+from .ai import estimate_issue_size, breakdown_issue, draft_issue_conversation, groom_issue_conversation, find_similar_issues
 
 console = Console()
-
 
 def detect_repo_from_git() -> str | None:
     """Try to detect repo from current directory's git remote."""
@@ -33,7 +32,6 @@ def detect_repo_from_git() -> str | None:
     except (subprocess.CalledProcessError, FileNotFoundError):
         pass
     return None
-
 
 def select_repo_interactive() -> str:
     """Let user select from their GitHub repos."""
@@ -70,7 +68,6 @@ def select_repo_interactive() -> str:
     console.print(f"[red]Invalid selection: {choice}[/red]")
     raise SystemExit(1)
 
-
 def resolve_repo(repo: str | None) -> str:
     """Resolve which repo to use."""
     if repo:
@@ -85,7 +82,6 @@ def resolve_repo(repo: str | None) -> str:
     # Interactive selection
     return select_repo_interactive()
 
-
 @click.group()
 @click.option("--repo", "-r", envvar="TSHIRTS_REPO", help="GitHub repo (owner/name)")
 @click.pass_context
@@ -93,7 +89,6 @@ def main(ctx, repo):
     """tshirts - Break down GitHub issues into smaller pieces."""
     ctx.ensure_object(dict)
     ctx.obj["repo"] = repo
-
 
 @main.command()
 @click.pass_context
@@ -116,7 +111,6 @@ def estimate(ctx):
         console.print(f"  Estimated size: [cyan]{size}[/cyan]")
         client.add_size_label(issue, size)
         console.print(f"  [green]Label added![/green]")
-
 
 @main.command()
 @click.argument("issue_number", type=int)
@@ -156,7 +150,6 @@ def breakdown(ctx, issue_number, create):
             )
             console.print(f"  Created [green]#{new_issue.number}[/green]: {task.title}")
 
-
 @main.command()
 @click.pass_context
 def new(ctx):
@@ -194,6 +187,34 @@ def new(ctx):
                     for task in draft.tasks:
                         console.print(f"  - {task}")
 
+            # Check for similar existing issues
+            console.print()
+            console.print("[dim]Checking for similar existing issues...[/dim]")
+            existing_issues = client.get_open_issues()
+            
+            skip_issues = set()  # Track drafts to skip
+            for idx, draft in enumerate(drafts):
+                similar = find_similar_issues(draft, existing_issues)
+                if similar:
+                    console.print(f"\n[yellow]Potential matches for:[/yellow] {draft.title}")
+
+                    for sim in similar:
+                        rel_color = {"duplicate": "red", "subtask": "yellow", "related": "cyan"}.get(sim.relationship, "white")
+                        console.print(f"  [{rel_color}]{sim.relationship.upper()}[/{rel_color}] #{sim.issue_number}: {sim.title}")
+                        console.print(f"    [dim]{sim.reasoning}[/dim]")
+                    
+                    if any(s.relationship == "duplicate" for s in similar):
+                        if not Confirm.ask(f"[red]Create anyway (possible duplicate)?[/red]", default=False):
+                            skip_issues.add(idx)
+                            console.print("[dim]Skipping this issue.[/dim]")
+            
+            # Filter out skipped drafts
+            drafts = [d for i, d in enumerate(drafts) if i not in skip_issues]
+            
+            if not drafts:
+                console.print("[dim]No issues to create.[/dim]")
+                break
+            
             # Confirm creation
             console.print()
             if Confirm.ask(f"[yellow]Create {len(drafts)} issue(s)?[/yellow]", default=True):
@@ -221,7 +242,6 @@ def new(ctx):
             console.print(f"\n[cyan]{question}[/cyan]")
             answer = Prompt.ask("")
             conversation.append({"role": "user", "content": answer})
-
 
 @main.command()
 @click.argument("issue_number", type=int, required=False)
@@ -293,15 +313,12 @@ def groom(ctx, issue_number):
             answer = Prompt.ask("")
             conversation.append({"role": "user", "content": answer})
 
-
-
 @main.command()
 @click.argument("issue_number", type=int, required=False)
 @click.pass_context
 def refine(ctx, issue_number):
     """Alias for groom - refine issues by gathering missing information."""
     ctx.invoke(groom, issue_number=issue_number)
-
 
 if __name__ == "__main__":
     main()

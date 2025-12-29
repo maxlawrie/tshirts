@@ -121,6 +121,16 @@ class GitHubClient:
                 issues.append(issue)
         return issues
 
+
+    def get_open_issues(self) -> list[Issue]:
+        """Get all open issues."""
+        issues = []
+        for gh_issue in self.repo.get_issues(state="open"):
+            if gh_issue.pull_request:
+                continue
+            issues.append(Issue.from_github(gh_issue))
+        return issues
+
     def update_issue_body(self, issue: Issue, new_body: str):
         """Update an issue's description."""
         gh_issue = self.repo.get_issue(issue.number)

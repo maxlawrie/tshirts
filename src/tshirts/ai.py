@@ -313,3 +313,88 @@ If the issue is well-defined or you have gathered enough information, set ready=
 
     except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
         return False, "Can you tell me more about this issue?", None, []
+
+SIMILAR_ISSUES_SCHEMA = json.dumps({
+    "type": "object",
+    "properties": {
+        "similar_issues": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "issue_number": {"type": "integer"},
+                    "relationship": {"type": "string", "enum": ["duplicate", "subtask", "related", "distinct"]},
+                    "reasoning": {"type": "string"}
+                },
+                "required": ["issue_number", "relationship", "reasoning"]
+            }
+        }
+    },
+    "required": ["similar_issues"]
+})
+
+
+@dataclass
+class SimilarIssue:
+    """A potentially similar existing issue."""
+    issue_number: int
+    title: str
+    relationship: str  # duplicate, subtask, related, distinct
+    reasoning: str
+
+
+def find_similar_issues(draft: DraftIssue, existing_issues: list) -> list[SimilarIssue]:
+    """Find existing issues that are similar to the draft.
+    
+    Returns issues that are duplicates, potential parents (for subtasks), or related.
+    """
+    if not existing_issues:
+        return []
+    
+    
+    issues_text = "\n".join(
+        f"#{i.number}: {i.title}\n  {i.body[:200] if i.body else '(no description)'}"
+        for i in existing_issues[:50]  # Limit to 50 issues
+    )
+    
+    prompt = f"""Compare this new issue draft against existing issues to find duplicates or related issues.
+
+NEW ISSUE DRAFT:
+Title: {draft.title}
+Description: {draft.description}
+
+EXISTING ISSUES:
+{issues_text}
+
+For each existing issue that is similar, determine:
+- "duplicate": Same problem/feature, should not create new issue
+- "subtask": New issue could be a subtask of the existing one
+- "related": Related but distinct, worth linking
+- "distinct": Not related
+
+Only include issues that are duplicate, subtask, or related. Omit distinct issues.
+Provide clear reasoning for each match."""
+
+    try:
+        response = _call_claude(prompt, SIMILAR_ISSUES_SCHEMA)
+        data = json.loads(response)
+        
+        if "structured_output" in data:
+            data = data["structured_output"]
+        
+        similar = []
+        issue_map = {i.number: i for i in existing_issues}
+        
+        for item in data.get("similar_issues", []):
+            num = item.get("issue_number")
+            if num in issue_map and item.get("relationship") != "distinct":
+                similar.append(SimilarIssue(
+                    issue_number=num,
+                    title=issue_map[num].title,
+                    relationship=item.get("relationship", "related"),
+                    reasoning=item.get("reasoning", "")
+                ))
+        
+        return similar
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
+        return []
