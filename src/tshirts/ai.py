@@ -137,7 +137,7 @@ Return the estimated size."""
         if "size" in data:
             return data["size"]
         return "M"
-    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError):
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return "M"
 
 
@@ -173,13 +173,13 @@ Return an array of tasks with title, description, and size."""
         tasks = data.get("tasks", [])
         return [
             SubTask(
-                title=task["title"],
-                description=task["description"],
-                size=task["size"].upper(),
+                title=task.get("title") or "Untitled",
+                description=task.get("description") or "",
+                size=(task.get("size") or "M").upper(),
             )
             for task in tasks
         ]
-    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError, AttributeError, subprocess.TimeoutExpired):
         return [
             SubTask(
                 title=f"Implement: {issue.title}",
@@ -241,7 +241,7 @@ If you have enough information, set ready=true and provide the issues array (one
         else:
             return False, data.get("question", "Can you tell me more?"), None
 
-    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError, AttributeError, subprocess.TimeoutExpired):
         return False, "Can you describe what you want to build?", None
 
 GROOM_SCHEMA = json.dumps({
@@ -311,7 +311,7 @@ If the issue is well-defined or you have gathered enough information, set ready=
         else:
             return False, data.get("question", "Can you clarify this issue?"), None, suggestions
 
-    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError, AttributeError, subprocess.TimeoutExpired):
         return False, "Can you tell me more about this issue?", None, []
 
 SIMILAR_ISSUES_SCHEMA = json.dumps({
@@ -396,7 +396,7 @@ Provide clear reasoning for each match."""
                 ))
         
         return similar
-    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError, AttributeError, subprocess.TimeoutExpired):
         return []
 
 
@@ -451,7 +451,7 @@ Write a 1-3 sentence closing comment that:
             data = data["structured_output"]
         
         return data.get("comment", "Issue closed.")
-    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError, AttributeError, subprocess.TimeoutExpired):
         if sub_issues:
             return f"Completed with {len(sub_issues)} sub-task(s). Closing."
         return "Issue closed."
