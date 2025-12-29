@@ -398,3 +398,60 @@ Provide clear reasoning for each match."""
         return similar
     except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
         return []
+
+
+CLOSING_COMMENT_SCHEMA = json.dumps({
+    "type": "object",
+    "properties": {
+        "comment": {"type": "string"}
+    },
+    "required": ["comment"]
+})
+
+
+def generate_closing_comment(issue, sub_issues: list, reason: str | None = None) -> str:
+    """Generate a closing comment for an issue.
+    
+    Args:
+        issue: The issue being closed
+        sub_issues: List of completed sub-issues (if any)
+        reason: Optional reason for closure (if no sub-issues)
+    
+    Returns:
+        A suggested closing comment
+    """
+    sub_issues_text = ""
+    if sub_issues:
+        sub_issues_text = "Completed sub-issues:\n" + "\n".join(
+            f"- #{i.number}: {i.title}" for i in sub_issues
+        )
+    
+    reason_text = f"\nClosure reason provided: {reason}" if reason else ""
+    
+    prompt = f"""Generate a brief, professional closing comment for this GitHub issue.
+
+Issue #{issue.number}: {issue.title}
+
+Description:
+{issue.body[:500] if issue.body else '(no description)'}
+
+{sub_issues_text}
+{reason_text}
+
+Write a 1-3 sentence closing comment that:
+- Summarizes what was accomplished
+- Thanks contributors if applicable
+- Is concise and professional"""
+
+    try:
+        response = _call_claude(prompt, CLOSING_COMMENT_SCHEMA)
+        data = json.loads(response)
+        
+        if "structured_output" in data:
+            data = data["structured_output"]
+        
+        return data.get("comment", "Issue closed.")
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
+        if sub_issues:
+            return f"Completed with {len(sub_issues)} sub-task(s). Closing."
+        return "Issue closed."

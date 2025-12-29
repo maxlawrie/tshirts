@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.prompt import Prompt, Confirm
 
 from .github_client import GitHubClient, get_user_repos
-from .ai import estimate_issue_size, breakdown_issue, draft_issue_conversation, groom_issue_conversation, find_similar_issues
+from .ai import estimate_issue_size, breakdown_issue, draft_issue_conversation, groom_issue_conversation, find_similar_issues, generate_closing_comment
 
 console = Console()
 
@@ -425,6 +425,77 @@ def groom(ctx, issue_number):
 def refine(ctx, issue_number):
     """Alias for groom - refine issues by gathering missing information."""
     ctx.invoke(groom, issue_number=issue_number)
+
+
+@main.command()
+@click.argument("issue_number", type=int)
+@click.pass_context
+def close(ctx, issue_number):
+    """Close an issue with validation and AI-generated closing comment."""
+    repo = resolve_repo(ctx.obj.get("repo"))
+    client = GitHubClient(repo)
+
+    issue = client.get_issue(issue_number)
+    if not issue:
+        console.print(f"[red]Error:[/red] Issue #{issue_number} not found")
+        raise SystemExit(1)
+
+    console.print(f"\n[bold]Closing #{issue.number}:[/bold] {issue.title}\n")
+
+    # Check for sub-issues
+    open_subs, closed_subs = client.get_sub_issues(issue_number)
+
+    # Block if there are open sub-issues
+    if open_subs:
+        console.print("[red]Cannot close:[/red] This issue has open sub-issues:\n")
+        for sub in open_subs:
+            console.print(f"  [yellow]#{sub.number}[/yellow]: {sub.title}")
+        console.print("\n[dim]Close all sub-issues first, then try again.[/dim]")
+        raise SystemExit(1)
+
+    # Handle different scenarios
+    reason = None
+    if not closed_subs:
+        # No sub-issues at all - ask why closing
+        console.print("[yellow]This issue has no sub-issues.[/yellow]")
+        reason = Prompt.ask("Why are you closing this issue?")
+    else:
+        # All sub-issues are closed
+        console.print(f"[green]All {len(closed_subs)} sub-issue(s) are closed:[/green]")
+        for sub in closed_subs:
+            console.print(f"  [dim]#{sub.number}[/dim]: {sub.title}")
+        console.print()
+        if not Confirm.ask("[yellow]Are you satisfied with the completion of all subtasks?[/yellow]", default=True):
+            console.print("[dim]Aborting closure.[/dim]")
+            return
+
+    # Generate AI closing comment
+    console.print("\n[dim]Generating closing comment...[/dim]")
+    suggested_comment = generate_closing_comment(issue, closed_subs, reason)
+
+    console.print("\n[bold]Suggested closing comment:[/bold]")
+    console.print(f"[cyan]{suggested_comment}[/cyan]")
+    console.print()
+
+    # Let user edit or accept
+    choice = Prompt.ask("Accept, edit, or skip comment?", choices=["a", "e", "s"], default="a")
+
+    final_comment = None
+    if choice == "a":
+        final_comment = suggested_comment
+    elif choice == "e":
+        final_comment = Prompt.ask("Enter your closing comment")
+    # choice == "s" means skip comment
+
+    # Final confirmation
+    if not Confirm.ask("\n[yellow]Close this issue?[/yellow]", default=True):
+        console.print("[dim]Aborting closure.[/dim]")
+        return
+
+    # Close the issue
+    client.close_issue(issue, final_comment)
+    console.print(f"\n[green]Issue #{issue_number} closed![/green]")
+
 
 if __name__ == "__main__":
     main()

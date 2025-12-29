@@ -140,3 +140,33 @@ class GitHubClient:
         """Add a comment to an issue."""
         gh_issue = self.repo.get_issue(issue.number)
         gh_issue.create_comment(comment)
+
+    def get_sub_issues(self, parent_number: int) -> tuple[list[Issue], list[Issue]]:
+        """Get sub-issues of a parent issue.
+        
+        Returns (open_issues, closed_issues) that reference this issue as parent.
+        """
+        open_issues = []
+        closed_issues = []
+        
+        # Search for issues mentioning this as parent
+        parent_ref = f"Parent issue: #{parent_number}"
+        
+        for gh_issue in self.repo.get_issues(state="all"):
+            if gh_issue.pull_request:
+                continue
+            if gh_issue.body and parent_ref in gh_issue.body:
+                issue = Issue.from_github(gh_issue)
+                if gh_issue.state == "open":
+                    open_issues.append(issue)
+                else:
+                    closed_issues.append(issue)
+        
+        return open_issues, closed_issues
+
+    def close_issue(self, issue: Issue, comment: str | None = None):
+        """Close an issue, optionally adding a closing comment."""
+        gh_issue = self.repo.get_issue(issue.number)
+        if comment:
+            gh_issue.create_comment(comment)
+        gh_issue.edit(state="closed")
