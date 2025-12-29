@@ -135,3 +135,8 @@ class GitHubClient:
         """Update an issue's description."""
         gh_issue = self.repo.get_issue(issue.number)
         gh_issue.edit(body=new_body)
+
+    def add_comment(self, issue: Issue, comment: str):
+        """Add a comment to an issue."""
+        gh_issue = self.repo.get_issue(issue.number)
+        gh_issue.create_comment(comment)

@@ -140,15 +140,25 @@ def breakdown(ctx, issue_number, create):
     # If --create flag passed, create immediately; otherwise prompt user
     should_create = create or Confirm.ask("\n[yellow]Create these issues?[/yellow]", default=False)
 
+
     if should_create:
         console.print("[yellow]Creating sub-issues...[/yellow]")
+        created_issues = []
         for task in tasks:
             new_issue = client.create_issue(
                 title=task.title,
                 body=f"Parent issue: #{issue_number}\n\n{task.description}",
                 labels=[f"size: {task.size}"],
             )
+            created_issues.append((new_issue.number, task.title))
             console.print(f"  Created [green]#{new_issue.number}[/green]: {task.title}")
+
+        # Add comment to parent issue linking to all subtasks
+        if created_issues:
+            subtask_list = "\n".join(f"- #{num}: {title}" for num, title in created_issues)
+            comment = f"## Subtasks created\n\n{subtask_list}"
+            client.add_comment(issue, comment)
+            console.print(f"\n[green]Updated parent issue #{issue_number} with subtask links[/green]")
 
 @main.command()
 @click.pass_context
