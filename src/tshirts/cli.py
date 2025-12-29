@@ -6,7 +6,7 @@ from rich.console import Console
 from rich.prompt import Prompt, Confirm
 
 from .github_client import GitHubClient, get_user_repos
-from .ai import estimate_issue_size, breakdown_issue, draft_issue_conversation
+from .ai import estimate_issue_size, breakdown_issue, draft_issue_conversation, groom_issue_conversation
 
 console = Console()
 
@@ -219,6 +219,77 @@ def new(ctx):
             # Ask the follow-up question
             conversation.append({"role": "assistant", "content": question})
             console.print(f"\n[cyan]{question}[/cyan]")
+            answer = Prompt.ask("")
+            conversation.append({"role": "user", "content": answer})
+
+
+@main.command()
+@click.argument("issue_number", type=int, required=False)
+@click.pass_context
+def groom(ctx, issue_number):
+    """Refine issues by gathering missing information."""
+    repo = resolve_repo(ctx.obj.get("repo"))
+    client = GitHubClient(repo)
+
+    # If no issue specified, show list of groomable issues
+    if issue_number is None:
+        issues = client.get_issues_for_grooming()
+        if not issues:
+            console.print("[green]No issues need grooming![/green]")
+            return
+
+        console.print(f"[bold]Issues that may need refinement ({len(issues)}):[/bold]")
+        console.print()
+        for issue in issues:
+            size = next((l.replace('size: ', '') for l in issue.labels if l.startswith('size:')), '?')
+            console.print(f"  [cyan]#{issue.number}[/cyan] [{size}] {issue.title}")
+
+        console.print()
+        console.print("[dim]Run 'tshirts groom <number>' to refine a specific issue.[/dim]")
+        return
+
+    # Get the specific issue
+    issue = client.get_issue(issue_number)
+    if not issue:
+        console.print(f"[red]Error:[/red] Issue #{issue_number} not found")
+        raise SystemExit(1)
+
+    console.print(f"[bold]Grooming #{issue.number}:[/bold] {issue.title}")
+    if len(issue.body) > 200:
+        console.print("[dim]Current description:[/dim]")
+        console.print(f"{issue.body[:200]}...")
+    else:
+        console.print("[dim]Current description:[/dim]")
+        console.print(issue.body)
+    console.print()
+
+    # Start conversation
+    conversation = []
+
+    while True:
+        console.print("[dim]Analyzing...[/dim]")
+        ready, question, refined_description, suggestions = groom_issue_conversation(issue, conversation)
+
+        # Show suggestions if any
+        for suggestion in suggestions:
+            console.print(f"[yellow]Suggestion:[/yellow] {suggestion}")
+
+        if ready and refined_description:
+            console.print()
+            console.print("[bold green]Refined description:[/bold green]")
+            console.print(refined_description)
+            console.print()
+
+            if Confirm.ask("[yellow]Update issue with this description?[/yellow]", default=True):
+                client.update_issue_body(issue, refined_description)
+                console.print(f"[green]Issue #{issue.number} updated![/green]")
+            else:
+                console.print("[dim]Issue not updated.[/dim]")
+            break
+        else:
+            conversation.append({"role": "assistant", "content": question})
+            console.print()
+            console.print(f"[cyan]{question}[/cyan]")
             answer = Prompt.ask("")
             conversation.append({"role": "user", "content": answer})
 

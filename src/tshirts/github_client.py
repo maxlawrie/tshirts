@@ -108,3 +108,20 @@ class GitHubClient:
     def create_issue(self, title: str, body: str, labels: list[str] | None = None):
         """Create a new issue."""
         return self.repo.create_issue(title=title, body=body, labels=labels or [])
+
+    def get_issues_for_grooming(self) -> list[Issue]:
+        """Get open issues sized S or larger that may need refinement."""
+        groomable_sizes = ["size: S", "size: M", "size: L", "size: XL"]
+        issues = []
+        for gh_issue in self.repo.get_issues(state="open"):
+            if gh_issue.pull_request:
+                continue
+            issue = Issue.from_github(gh_issue)
+            if any(label in groomable_sizes for label in issue.labels):
+                issues.append(issue)
+        return issues
+
+    def update_issue_body(self, issue: Issue, new_body: str):
+        """Update an issue's description."""
+        gh_issue = self.repo.get_issue(issue.number)
+        gh_issue.edit(body=new_body)

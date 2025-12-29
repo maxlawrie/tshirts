@@ -243,3 +243,73 @@ If you have enough information, set ready=true and provide the issues array (one
 
     except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
         return False, "Can you describe what you want to build?", None
+
+GROOM_SCHEMA = json.dumps({
+    "type": "object",
+    "properties": {
+        "ready": {"type": "boolean"},
+        "question": {"type": "string"},
+        "refined_description": {"type": "string"},
+        "suggestions": {
+            "type": "array",
+            "items": {"type": "string"}
+        }
+    },
+    "required": ["ready"]
+})
+
+
+def groom_issue_conversation(issue: Issue, conversation: list[dict]) -> tuple[bool, str | None, str | None, list[str]]:
+    """Continue a conversation to refine an existing issue.
+
+    Returns:
+        (ready, question, refined_description, suggestions) where:
+        - ready: True if the issue is fully refined
+        - question: Next clarifying question (if not ready)
+        - refined_description: Updated issue body (if ready)
+        - suggestions: List of suggestions (e.g., "consider breaking down")
+    """
+    history = "\n".join(
+        f"{'User' if m['role'] == 'user' else 'Assistant'}: {m['content']}"
+        for m in conversation
+    )
+
+    prompt = f"""You are helping refine a GitHub issue to make it clearer and more actionable.
+
+Issue #{issue.number}: {issue.title}
+Current size: {next((l.replace('size: ', '') for l in issue.labels if l.startswith('size:')), 'Unknown')}
+
+Current description:
+{issue.body}
+
+Analyze this issue and identify what needs clarification:
+- Unclear requirements or acceptance criteria
+- Ambiguous technical approach
+- Missing context or constraints
+- Scope too large (may need breakdown into smaller issues)
+
+Conversation so far:
+{history}
+
+If the issue needs clarification, set ready=false and ask ONE focused question.
+If the issue is well-defined or you have gathered enough information, set ready=true and provide:
+- refined_description: The improved issue description incorporating any new information
+- suggestions: Any recommendations (e.g., "Consider breaking this into smaller issues")"""
+
+    try:
+        response = _call_claude(prompt, GROOM_SCHEMA)
+        data = json.loads(response)
+
+        if "structured_output" in data:
+            data = data["structured_output"]
+
+        ready = data.get("ready", False)
+        suggestions = data.get("suggestions", [])
+
+        if ready:
+            return True, None, data.get("refined_description", issue.body), suggestions
+        else:
+            return False, data.get("question", "Can you clarify this issue?"), None, suggestions
+
+    except (json.JSONDecodeError, KeyError, subprocess.CalledProcessError, TypeError):
+        return False, "Can you tell me more about this issue?", None, []
