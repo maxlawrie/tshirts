@@ -112,12 +112,33 @@ def estimate(ctx):
         client.add_size_label(issue, size)
         console.print(f"  [green]Label added![/green]")
 
+
+def _create_issues(client, issue, issue_number, tasks, repo):
+    """Helper to create issues and update parent."""
+    created_issues = []
+    for task in tasks:
+        new_issue = client.create_issue(
+            title=task.title,
+            body=f"Parent issue: #{issue_number}\n\n{task.description}",
+            labels=[f"size: {task.size}"],
+        )
+        created_issues.append((new_issue.number, task.title))
+        console.print(f"  Created [green]#{new_issue.number}[/green]: {task.title}")
+
+    # Add comment to parent issue linking to all subtasks
+    if created_issues:
+        subtask_list = "\n".join(f"- #{num}: {title}" for num, title in created_issues)
+        comment = f"## Subtasks created\n\n{subtask_list}"
+        client.add_comment(issue, comment)
+        console.print(f"\n[green]Updated parent issue #{issue_number} with subtask links[/green]")
+
+
 @main.command()
 @click.argument("issue_number", type=int)
 @click.option("--create/--no-create", default=False, help="Create sub-issues automatically")
 @click.pass_context
 def breakdown(ctx, issue_number, create):
-    """Break down an issue into smaller tasks."""
+    """Break down an issue into smaller tasks with interactive menu."""
     repo = resolve_repo(ctx.obj.get("repo"))
 
     client = GitHubClient(repo)
@@ -129,36 +150,111 @@ def breakdown(ctx, issue_number, create):
 
     console.print(f"\n[bold]Breaking down #{issue.number}:[/bold] {issue.title}\n")
 
-    tasks = breakdown_issue(issue)
+    tasks = list(breakdown_issue(issue))
 
-    for i, task in enumerate(tasks, 1):
-        console.print(f"[cyan]{i}.[/cyan] [bold]{task.title}[/bold]")
-        console.print(f"   Size: {task.size}")
-        console.print(f"   {task.description[:100]}..." if len(task.description) > 100 else f"   {task.description}")
+    def display_tasks(tasks, selected=None):
+        """Display tasks with optional selection markers."""
+        if selected is None:
+            selected = set(range(len(tasks)))
+        for i, task in enumerate(tasks):
+            marker = "[green]✓[/green]" if i in selected else "[dim]○[/dim]"
+            console.print(f"{marker} [cyan]{i+1}.[/cyan] [bold]{task.title}[/bold] [{task.size}]")
+            desc = task.description[:80] + "..." if len(task.description) > 80 else task.description
+            console.print(f"     [dim]{desc}[/dim]")
+
+    # If --create flag passed, skip menu and create all
+    if create:
+        display_tasks(tasks)
+        console.print()
+        _create_issues(client, issue, issue_number, tasks, repo)
+        return
+
+    # Interactive menu loop
+    selected = set(range(len(tasks)))  # All selected by default
+
+    while True:
+        console.print()
+        display_tasks(tasks, selected)
+        console.print()
+        console.print("[bold]Options:[/bold]")
+        console.print("  [cyan]c[/cyan] - Create selected issues")
+        console.print("  [cyan]e[/cyan] - Edit (toggle selection, modify issues)")
+        console.print("  [cyan]r[/cyan] - Regenerate breakdown")
+        console.print("  [cyan]q[/cyan] - Quit without creating")
         console.print()
 
-    # If --create flag passed, create immediately; otherwise prompt user
-    should_create = create or Confirm.ask("\n[yellow]Create these issues?[/yellow]", default=False)
+        choice = Prompt.ask("Choose", choices=["c", "e", "r", "q"], default="c")
 
+        if choice == "q":
+            console.print("[dim]Exiting without creating issues.[/dim]")
+            return
 
-    if should_create:
-        console.print("[yellow]Creating sub-issues...[/yellow]")
-        created_issues = []
-        for task in tasks:
-            new_issue = client.create_issue(
-                title=task.title,
-                body=f"Parent issue: #{issue_number}\n\n{task.description}",
-                labels=[f"size: {task.size}"],
-            )
-            created_issues.append((new_issue.number, task.title))
-            console.print(f"  Created [green]#{new_issue.number}[/green]: {task.title}")
+        elif choice == "r":
+            console.print("\n[dim]Regenerating breakdown...[/dim]\n")
+            tasks = list(breakdown_issue(issue))
+            selected = set(range(len(tasks)))
+            continue
 
-        # Add comment to parent issue linking to all subtasks
-        if created_issues:
-            subtask_list = "\n".join(f"- #{num}: {title}" for num, title in created_issues)
-            comment = f"## Subtasks created\n\n{subtask_list}"
-            client.add_comment(issue, comment)
-            console.print(f"\n[green]Updated parent issue #{issue_number} with subtask links[/green]")
+        elif choice == "e":
+            # Edit mode
+            while True:
+                console.print()
+                display_tasks(tasks, selected)
+                console.print()
+                console.print("[bold]Edit mode:[/bold]")
+                console.print("  Enter issue number to toggle selection or edit")
+                console.print("  [cyan]d[/cyan] - Done editing")
+                console.print()
+
+                edit_choice = Prompt.ask("Select issue or done", default="d")
+
+                if edit_choice.lower() == "d":
+                    break
+
+                if edit_choice.isdigit():
+                    idx = int(edit_choice) - 1
+                    if 0 <= idx < len(tasks):
+                        # Show edit submenu for this task
+                        task = tasks[idx]
+                        console.print(f"\n[bold]Editing issue {idx+1}:[/bold] {task.title}")
+                        console.print("  [cyan]t[/cyan] - Toggle selection")
+                        console.print("  [cyan]n[/cyan] - Edit title")
+                        console.print("  [cyan]s[/cyan] - Change size")
+                        console.print("  [cyan]b[/cyan] - Back")
+
+                        sub = Prompt.ask("Action", choices=["t", "n", "s", "b"], default="b")
+
+                        if sub == "t":
+                            if idx in selected:
+                                selected.remove(idx)
+                                console.print(f"[dim]Deselected issue {idx+1}[/dim]")
+                            else:
+                                selected.add(idx)
+                                console.print(f"[green]Selected issue {idx+1}[/green]")
+
+                        elif sub == "n":
+                            new_title = Prompt.ask("New title", default=task.title)
+                            tasks[idx] = type(task)(title=new_title, description=task.description, size=task.size)
+                            console.print("[green]Updated title[/green]")
+
+                        elif sub == "s":
+                            new_size = Prompt.ask("Size", choices=["XS", "S", "M", "L", "XL"], default=task.size)
+                            tasks[idx] = type(task)(title=task.title, description=task.description, size=new_size)
+                            console.print(f"[green]Updated size to {new_size}[/green]")
+                    else:
+                        console.print("[red]Invalid issue number[/red]")
+            continue
+
+        elif choice == "c":
+            # Create selected issues
+            selected_tasks = [tasks[i] for i in sorted(selected)]
+            if not selected_tasks:
+                console.print("[yellow]No issues selected. Use 'e' to select issues.[/yellow]")
+                continue
+
+            console.print(f"\n[yellow]Creating {len(selected_tasks)} issue(s)...[/yellow]")
+            _create_issues(client, issue, issue_number, selected_tasks, repo)
+            return
 
 @main.command()
 @click.pass_context
