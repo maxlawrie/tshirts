@@ -91,8 +91,9 @@ def main(ctx, repo):
     ctx.obj["repo"] = repo
 
 @main.command()
+@click.option("--yes", "-y", is_flag=True, help="Accept all suggestions without prompting")
 @click.pass_context
-def estimate(ctx):
+def estimate(ctx, yes):
     """Assign size labels (XS, S, M, L, XL) to issues without them."""
     repo = resolve_repo(ctx.obj.get("repo"))
 
@@ -105,12 +106,49 @@ def estimate(ctx):
 
     console.print(f"Found [bold]{len(issues)}[/bold] issues without size labels")
 
+    labeled = 0
+    skipped = 0
+
     for issue in issues:
         console.print(f"\n[bold]#{issue.number}[/bold]: {issue.title}")
+        if issue.body:
+            preview = issue.body[:100] + "..." if len(issue.body) > 100 else issue.body
+            console.print(f"  [dim]{preview}[/dim]")
+
         size = estimate_issue_size(issue)
-        console.print(f"  Estimated size: [cyan]{size}[/cyan]")
-        client.add_size_label(issue, size)
-        console.print(f"  [green]Label added![/green]")
+        console.print(f"  Suggested: [cyan]{size}[/cyan]")
+
+        if yes:
+            # Auto-accept mode
+            client.add_size_label(issue, size)
+            console.print(f"  [green]Labeled {size}[/green]")
+            labeled += 1
+        else:
+            # Interactive mode: accept, change, or skip
+            choice = Prompt.ask(
+                "  [a]ccept, [c]hange, [s]kip",
+                choices=["a", "c", "s"],
+                default="a",
+            )
+
+            if choice == "a":
+                client.add_size_label(issue, size)
+                console.print(f"  [green]Labeled {size}[/green]")
+                labeled += 1
+            elif choice == "c":
+                new_size = Prompt.ask(
+                    "  Size",
+                    choices=["XS", "S", "M", "L", "XL"],
+                    default=size,
+                )
+                client.add_size_label(issue, new_size)
+                console.print(f"  [green]Labeled {new_size}[/green]")
+                labeled += 1
+            else:
+                console.print("  [dim]Skipped[/dim]")
+                skipped += 1
+
+    console.print(f"\n[bold]Done:[/bold] {labeled} labeled, {skipped} skipped")
 
 
 def _create_issues(client, issue, issue_number, tasks, repo):

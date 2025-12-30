@@ -143,17 +143,58 @@ class TestEstimateCommand:
         assert result.exit_code == 0
         assert "already have size labels" in result.output
 
-    def test_estimates_and_labels_issues(self, cli_runner, mock_github_client, sample_issue):
-        """Test estimating and labeling issues."""
+    def test_estimates_and_labels_issues_with_yes_flag(self, cli_runner, mock_github_client, sample_issue):
+        """Test estimating and labeling issues with --yes flag (auto-accept)."""
         issue_no_label = Issue(number=1, title="Test", body="Body", labels=[])
         mock_github_client.get_issues_without_size_label.return_value = [issue_no_label]
 
         with patch("tshirts.cli.resolve_repo", return_value="owner/repo"):
             with patch("tshirts.cli.estimate_issue_size", return_value="M"):
-                result = cli_runner.invoke(main, ["estimate"])
+                result = cli_runner.invoke(main, ["estimate", "--yes"])
 
         assert result.exit_code == 0
-        assert "Estimated size: M" in result.output
+        assert "Suggested: M" in result.output
+        assert "Labeled M" in result.output
+        mock_github_client.add_size_label.assert_called_once()
+
+    def test_estimates_interactive_accept(self, cli_runner, mock_github_client, sample_issue):
+        """Test interactive mode - accepting suggested size."""
+        issue_no_label = Issue(number=1, title="Test", body="Body", labels=[])
+        mock_github_client.get_issues_without_size_label.return_value = [issue_no_label]
+
+        with patch("tshirts.cli.resolve_repo", return_value="owner/repo"):
+            with patch("tshirts.cli.estimate_issue_size", return_value="M"):
+                result = cli_runner.invoke(main, ["estimate"], input="a\n")
+
+        assert result.exit_code == 0
+        assert "Suggested: M" in result.output
+        mock_github_client.add_size_label.assert_called_once()
+
+    def test_estimates_interactive_skip(self, cli_runner, mock_github_client, sample_issue):
+        """Test interactive mode - skipping an issue."""
+        issue_no_label = Issue(number=1, title="Test", body="Body", labels=[])
+        mock_github_client.get_issues_without_size_label.return_value = [issue_no_label]
+
+        with patch("tshirts.cli.resolve_repo", return_value="owner/repo"):
+            with patch("tshirts.cli.estimate_issue_size", return_value="M"):
+                result = cli_runner.invoke(main, ["estimate"], input="s\n")
+
+        assert result.exit_code == 0
+        assert "Skipped" in result.output
+        assert "0 labeled, 1 skipped" in result.output
+        mock_github_client.add_size_label.assert_not_called()
+
+    def test_estimates_interactive_change(self, cli_runner, mock_github_client, sample_issue):
+        """Test interactive mode - changing the suggested size."""
+        issue_no_label = Issue(number=1, title="Test", body="Body", labels=[])
+        mock_github_client.get_issues_without_size_label.return_value = [issue_no_label]
+
+        with patch("tshirts.cli.resolve_repo", return_value="owner/repo"):
+            with patch("tshirts.cli.estimate_issue_size", return_value="M"):
+                result = cli_runner.invoke(main, ["estimate"], input="c\nL\n")
+
+        assert result.exit_code == 0
+        assert "Labeled L" in result.output
         mock_github_client.add_size_label.assert_called_once()
 
 
