@@ -73,3 +73,18 @@ tshirts estimate
 | M    | Half day - 1 day | Moderate feature, multiple files |
 | L    | 2-3 days      | Significant feature, refactoring |
 | XL   | 1+ week       | Major feature, needs breakdown |
+
+## Development
+
+### Running tests
+
+```bash
+# Install with test dependencies
+pip install -e ".[test]"
+
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=tshirts --cov-report=term-missing
+```
