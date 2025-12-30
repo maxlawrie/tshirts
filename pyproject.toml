@@ -8,10 +8,12 @@ dependencies = [
     "click>=8.1.0",
     "pygithub>=2.1.0",
     "rich>=13.0.0",
+    "mcp>=1.0.0",
 ]
 
 [project.scripts]
 tshirts = "tshirts.cli:main"
+tshirts-mcp = "tshirts.mcp:main"
 
 [build-system]
 requires = ["hatchling"]
