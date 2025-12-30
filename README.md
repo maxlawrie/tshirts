@@ -74,6 +74,60 @@ tshirts estimate
 | L    | 2-3 days      | Significant feature, refactoring |
 | XL   | 1+ week       | Major feature, needs breakdown |
 
+## MCP Server
+
+tshirts can also run as an MCP (Model Context Protocol) server, allowing LLM clients like Claude Desktop to use its functionality.
+
+### Running the server
+
+```bash
+tshirts-mcp
+```
+
+### Claude Desktop configuration
+
+Add to your Claude Desktop config (`claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "tshirts": {
+      "command": "python",
+      "args": ["-m", "tshirts.mcp"],
+      "env": {
+        "GITHUB_TOKEN": "your-github-token"
+      }
+    }
+  }
+}
+```
+
+### Available tools
+
+| Tool | Description |
+|------|-------------|
+| `estimate_issue` | Estimate t-shirt size for an issue |
+| `breakdown_issue` | Break issue into subtasks |
+| `draft_issue` | Generate issue draft from description |
+| `refine_issue` | Suggest improvements to an issue |
+| `find_similar_issues` | Check for duplicate/related issues |
+| `generate_closing_comment` | Generate AI closing comment |
+| `apply_size_label` | Apply size label to issue |
+| `create_issue` | Create a new issue |
+| `create_subtasks` | Create subtasks linked to parent |
+| `update_issue_body` | Update issue description |
+| `close_issue` | Close issue with optional comment |
+
+### Available resources
+
+| Resource | Description |
+|----------|-------------|
+| `github://{repo}/issues` | List open issues |
+| `github://{repo}/issues/{number}` | Get specific issue |
+| `github://{repo}/issues/unestimated` | Issues without size labels |
+| `github://{repo}/issues/groomable` | Issues needing refinement |
+| `github://repos` | List your repositories |
+
 ## Development
 
 ### Running tests
